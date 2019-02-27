@@ -1,0 +1,154 @@
+format_version: 2
+pipelines:
+  backend-release:
+    group: backend
+    materials:
+      backend-repo:
+        branch: master
+        git: http://gitlab.example.com:30080/root/gocd-dhall-example.git
+        auto_update: true
+    stages:
+    - build:
+        clean_workspace: false
+        jobs:
+          backend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: backend-version.txt
+            tasks:
+            - script: echo 'starting to build backend'
+            - script: ./scripts/build.sh backend
+    - test:
+        clean_workspace: false
+        jobs:
+          backend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: test-results.txt
+            tasks:
+            - script: echo 'testing backend'
+            - script: ./scripts/test.sh
+    - deploy:
+        clean_workspace: false
+        jobs:
+          backend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: backend-version.txt
+            tasks:
+            - fetch:
+                stage: build
+                is_file: true
+                job: backend
+                pipeline: backend-release
+                source: artifact-dir/backend-version.txt
+            - script: echo 'deploying backend'
+            - script: ./scripts/deploy.sh backend
+  frontend-release:
+    group: frontend
+    materials:
+      frontend-repo:
+        branch: master
+        git: http://gitlab.example.com:30080/root/gocd-dhall-example.git
+        auto_update: true
+    stages:
+    - build:
+        clean_workspace: false
+        jobs:
+          frontend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: frontend-version.txt
+            tasks:
+            - script: echo 'starting to build frontend'
+            - script: ./scripts/build.sh frontend
+    - test:
+        clean_workspace: false
+        jobs:
+          frontend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: test-results.txt
+            tasks:
+            - script: echo 'testing frontend'
+            - script: ./scripts/test.sh
+    - deploy:
+        clean_workspace: false
+        jobs:
+          frontend:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: frontend-version.txt
+            tasks:
+            - fetch:
+                stage: build
+                is_file: true
+                job: frontend
+                pipeline: frontend-release
+                source: artifact-dir/frontend-version.txt
+            - script: echo 'deploying frontend'
+            - script: ./scripts/deploy.sh frontend
+  test-env:
+    environment_variables:
+      URL: https://example.com
+    group: end-to-end-test
+    materials:
+      frontend-version:
+        stage: deploy
+        pipeline: frontend-release
+      end-to-end-test-repo:
+        branch: master
+        git: http://gitlab.example.com:30080/root/gocd-dhall-example.git
+        auto_update: true
+      backend-version:
+        stage: deploy
+        pipeline: backend-release
+    stages:
+    - manual:
+        clean_workspace: true
+        jobs:
+          manual:
+            tasks:
+            - script: echo 'Pipeline has been triggered'
+        approval:
+          type: manual
+    - test:
+        clean_workspace: true
+        jobs:
+          test:
+            artifacts:
+            - build:
+                destination: artifact-dir
+                source: test-results.txt
+            tasks:
+            - fetch:
+                stage: deploy
+                is_file: true
+                job: frontend
+                pipeline: frontend-release
+                source: artifact-dir/frontend-version.txt
+            - fetch:
+                stage: deploy
+                is_file: true
+                job: backend
+                pipeline: backend-release
+                source: artifact-dir/backend-version.txt
+            - script: ./scripts/end-to-end-test.sh
+environments:
+  end-to-end:
+    environment_variables:
+      TEST_USER_CREDS: baz:buz
+    pipelines:
+    - test-env
+  release:
+    environment_variables:
+      BUILD_CREDS: foo:bar
+    pipelines:
+    - frontend-release
+    - backend-release
